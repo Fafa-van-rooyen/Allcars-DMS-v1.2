@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24512" systemVersion="24G508" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="2">
+    <entity name="Dealership" representedClassName="Dealership" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <relationship name="vehicles" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Vehicle" inverseName="dealership" inverseEntity="Vehicle"/>
+    </entity>
+    <entity name="ReconItem" representedClassName=".ReconItem" syncable="YES" codeGenerationType="class">
+        <attribute name="amountCents" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="category" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="details" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="invoiceImageData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="invoiceNumber" optional="YES" attributeType="String"/>
+        <attribute name="paid" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="supplier" optional="YES" attributeType="String"/>
+        <relationship name="vehicle" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Vehicle" inverseName="reconItems" inverseEntity="Vehicle"/>
+    </entity>
+    <entity name="Vehicle" representedClassName=".Vehicle" syncable="YES" codeGenerationType="class">
+        <attribute name="askingPriceCents" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="buyerAddress" optional="YES" attributeType="String"/>
+        <attribute name="buyerFirstNames" optional="YES" attributeType="String"/>
+        <attribute name="buyerIDNumber" optional="YES" attributeType="String" allowsCloudEncryption="YES"/>
+        <attribute name="buyerPhone" optional="YES" attributeType="String"/>
+        <attribute name="buyerSurname" optional="YES" attributeType="String"/>
+        <attribute name="buyerVATNumber" optional="YES" attributeType="String"/>
+        <attribute name="colour" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="engineNumber" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="mainPhotoData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="make" optional="YES" attributeType="String"/>
+        <attribute name="mileage" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="mmCode" optional="YES" attributeType="String"/>
+        <attribute name="model" optional="YES" attributeType="String"/>
+        <attribute name="notes" optional="YES" attributeType="String"/>
+        <attribute name="preparedBy" optional="YES" attributeType="String"/>
+        <attribute name="purchaseDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="purchasePriceCents" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="registrationNumber" optional="YES" attributeType="String"/>
+        <attribute name="saleComments" optional="YES" attributeType="String"/>
+        <attribute name="saleDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="saleNotes" optional="YES" attributeType="String"/>
+        <attribute name="salePaymentMethod" optional="YES" attributeType="String"/>
+        <attribute name="salePriceCents" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="sellerFirstNames" optional="YES" attributeType="String"/>
+        <attribute name="sellerIDNumber" optional="YES" attributeType="String" allowsCloudEncryption="YES"/>
+        <attribute name="sellerPhone" optional="YES" attributeType="String"/>
+        <attribute name="sellerSurname" optional="YES" attributeType="String"/>
+        <attribute name="status" optional="YES" attributeType="String"/>
+        <attribute name="stockNumber" optional="YES" attributeType="String"/>
+        <attribute name="variant" optional="YES" attributeType="String"/>
+        <attribute name="vin" optional="YES" attributeType="String"/>
+        <attribute name="year" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="dealership" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Dealership" inverseName="vehicles" inverseEntity="Dealership"/>
+        <relationship name="reconItems" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ReconItem" inverseName="vehicle" inverseEntity="ReconItem"/>
+    </entity>
+</model>
