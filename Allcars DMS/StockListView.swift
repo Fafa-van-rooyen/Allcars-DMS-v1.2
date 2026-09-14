@@ -22,10 +22,14 @@ struct StockListView: View {
 
     @State private var vehicleToDelete: Vehicle?
     @State private var showingDeleteAlert = false
+    @State private var exportFile: StockExportFile?
+    @State private var exportError: String?
+
+    private var stockVehicles: [Vehicle] {
+        vehicles.filter { !$0.isSold }
+    }
 
     private var filteredVehicles: [Vehicle] {
-
-        let stockVehicles = vehicles.filter { !$0.isSold }
 
         guard !searchText.isEmpty else {
             return stockVehicles
@@ -96,6 +100,15 @@ struct StockListView: View {
             .toolbar {
 
                 ToolbarItem(
+                    placement: .topBarLeading
+                ) {
+                    Button(action: exportStock) {
+                        Label("Export Stock", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(stockVehicles.isEmpty)
+                }
+
+                ToolbarItem(
                     placement: .topBarTrailing
                 ) {
 
@@ -116,6 +129,17 @@ struct StockListView: View {
             ) {
 
                 AddVehicleView()
+            }
+            .sheet(item: $exportFile) { file in
+                SalesShareSheet(items: [file.url])
+            }
+            .alert("Could Not Export Stock", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(exportError ?? "Unknown error")
             }
             .alert(
                 "Delete Vehicle?",
@@ -169,6 +193,21 @@ struct StockListView: View {
             )
         }
     }
+
+    private func exportStock() {
+        do {
+            exportFile = StockExportFile(
+                url: try StockSpreadsheetExporter.export(stockVehicles)
+            )
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+}
+
+private struct StockExportFile: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 private struct VehicleRow: View {

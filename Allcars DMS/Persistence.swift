@@ -92,21 +92,14 @@ struct PersistenceController {
         request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
         let dealerships = try context.fetch(request)
 
-        // A participant must work in the accepted shared graph. The original
-        // account continues to use its private graph on all of its devices.
-        if let sharedStore,
-           let accepted = dealerships.first(where: {
-               $0.objectID.persistentStore == sharedStore
-           }) {
-            return accepted
-        }
-
-        if let privateStore,
-           let owned = dealerships.first(where: {
-               $0.objectID.persistentStore == privateStore
-           }) {
-            try attachOrphanedVehicles(to: owned, in: context)
-            return owned
+        // Always choose the established dealership. This prevents two devices
+        // from continuing with different roots if both created one before the
+        // first CloudKit import completed.
+        if let established = dealerships.max(by: {
+            ($0.vehicles?.count ?? 0) < ($1.vehicles?.count ?? 0)
+        }) {
+            try attachOrphanedVehicles(to: established, in: context)
+            return established
         }
 
         guard let privateStore else {
@@ -121,6 +114,139 @@ struct PersistenceController {
         try attachOrphanedVehicles(to: dealership, in: context)
         try context.save()
         return dealership
+    }
+
+    @MainActor
+    func allDealerships() throws -> [Dealership] {
+        let request = Dealership.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return try container.viewContext.fetch(request).sorted {
+            ($0.vehicles?.count ?? 0) > ($1.vehicles?.count ?? 0)
+        }
+    }
+
+    func existingSharingInformation(
+        for dealership: Dealership,
+        completion: @escaping (Result<(CKShare, CKContainer), Error>) -> Void
+    ) {
+        container.performBackgroundTask { context in
+            do {
+                _ = try context.existingObject(with: dealership.objectID)
+                guard let share = try self.container.fetchShares(
+                    matching: [dealership.objectID]
+                )[dealership.objectID] else {
+                    completion(.failure(PersistenceError.dealershipIsNotShared))
+                    return
+                }
+                completion(.success((
+                    share,
+                    CKContainer(identifier: self.cloudKitContainerIdentifier)
+                )))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func recoverUnsharedDealerships(
+        into mainDealership: Dealership,
+        completion: @escaping (Result<Int, Error>) -> Void
+    ) {
+        container.performBackgroundTask { context in
+            do {
+                guard let main = try context.existingObject(
+                    with: mainDealership.objectID
+                ) as? Dealership else {
+                    throw PersistenceError.dealershipUnavailable
+                }
+                let request = Dealership.fetchRequest()
+                let roots = try context.fetch(request)
+                let shares = try self.container.fetchShares(
+                    matching: roots.map(\.objectID)
+                )
+                guard let mainShare = shares[main.objectID] else {
+                    throw PersistenceError.mainDealershipIsNotShared
+                }
+
+                let candidates = roots.filter {
+                    $0.objectID != main.objectID &&
+                    ($0.vehicles?.count ?? 0) > 0 &&
+                    shares[$0.objectID] == nil
+                }
+                let stillShared = roots.contains {
+                    $0.objectID != main.objectID &&
+                    ($0.vehicles?.count ?? 0) > 0 &&
+                    shares[$0.objectID] != nil
+                }
+                guard !stillShared else {
+                    throw PersistenceError.otherDealershipStillShared
+                }
+                self.recover(
+                    candidates.map(\.objectID),
+                    at: 0,
+                    into: main.objectID,
+                    existingShare: mainShare,
+                    moved: 0,
+                    completion: completion
+                )
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    private func recover(
+        _ duplicateIDs: [NSManagedObjectID],
+        at index: Int,
+        into mainID: NSManagedObjectID,
+        existingShare: CKShare,
+        moved: Int,
+        completion: @escaping (Result<Int, Error>) -> Void
+    ) {
+        guard index < duplicateIDs.count else {
+            completion(.success(moved))
+            return
+        }
+        container.performBackgroundTask { context in
+            do {
+                guard let duplicate = try context.existingObject(
+                    with: duplicateIDs[index]
+                ) as? Dealership else {
+                    throw PersistenceError.dealershipUnavailable
+                }
+                let vehicleCount = duplicate.vehicles?.count ?? 0
+                self.container.share([duplicate], to: existingShare) {
+                    _, _, _, error in
+                    if let error {
+                        completion(.failure(error))
+                        return
+                    }
+                    self.container.performBackgroundTask { mergeContext in
+                        do {
+                            guard let main = try mergeContext.existingObject(with: mainID) as? Dealership,
+                                  let recovered = try mergeContext.existingObject(with: duplicateIDs[index]) as? Dealership else {
+                                throw PersistenceError.dealershipUnavailable
+                            }
+                            let vehicles = recovered.vehicles as? Set<Vehicle> ?? []
+                            vehicles.forEach { $0.dealership = main }
+                            try mergeContext.save()
+                            self.recover(
+                                duplicateIDs,
+                                at: index + 1,
+                                into: mainID,
+                                existingShare: existingShare,
+                                moved: moved + vehicleCount,
+                                completion: completion
+                            )
+                        } catch {
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            } catch {
+                completion(.failure(error))
+            }
+        }
     }
 
     @MainActor
@@ -222,12 +348,20 @@ enum PersistenceError: LocalizedError {
     case privateStoreUnavailable
     case sharedStoreUnavailable
     case shareWasNotCreated
+    case dealershipIsNotShared
+    case mainDealershipIsNotShared
+    case otherDealershipStillShared
+    case dealershipUnavailable
 
     var errorDescription: String? {
         switch self {
         case .privateStoreUnavailable: return "The private dealership store is unavailable."
         case .sharedStoreUnavailable: return "The shared dealership store is unavailable."
         case .shareWasNotCreated: return "CloudKit did not create the dealership share."
+        case .dealershipIsNotShared: return "This dealership does not currently have a CloudKit share."
+        case .mainDealershipIsNotShared: return "The main dealership share is unavailable."
+        case .otherDealershipStillShared: return "The smaller dealership is still shared. Open its sharing screen and choose Stop Sharing before recovering its vehicles."
+        case .dealershipUnavailable: return "The dealership record is unavailable."
         }
     }
 }

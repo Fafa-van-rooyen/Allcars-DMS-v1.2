@@ -1,6 +1,7 @@
 import SwiftUI
 import CloudKit
 import UIKit
+import CoreData
 
 struct DealershipSharingView: View {
     @State private var dealership: Dealership?
@@ -8,6 +9,10 @@ struct DealershipSharingView: View {
     @State private var cloudContainer: CKContainer?
     @State private var preparing = false
     @State private var errorMessage: String?
+    @State private var dealerships: [Dealership] = []
+    @State private var managingDealership: Dealership?
+    @State private var recovering = false
+    @State private var recoveryMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -38,6 +43,49 @@ struct DealershipSharingView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                if dealerships.count > 1 {
+                    Section("Sync Repair") {
+                        Text("More than one dealership record was found. The dealership with the most vehicles is selected as the main dealership.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(dealerships, id: \.objectID) { item in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(item.objectID == dealership?.objectID ? "Main Dealership" : "Other Dealership")
+                                        .font(.headline)
+                                    Text("\(item.vehicles?.count ?? 0) vehicles")
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Manage Share") {
+                                    manageShare(for: item)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+
+                        Button {
+                            recoverOtherDealerships()
+                        } label: {
+                            Label("Recover Vehicles into Main Dealership", systemImage: "arrow.triangle.merge")
+                        }
+                        .disabled(recovering || dealership == nil)
+
+                        if recovering {
+                            HStack {
+                                ProgressView()
+                                Text("Recovering vehicle records…")
+                            }
+                        }
+                        if let recoveryMessage {
+                            Text(recoveryMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
             }
             .navigationTitle("Dealership")
             .task { loadDealership() }
@@ -50,6 +98,8 @@ struct DealershipSharingView: View {
                     if !shown {
                         share = nil
                         cloudContainer = nil
+                        managingDealership = nil
+                        loadDealership()
                     }
                 }
             )) {
@@ -73,8 +123,48 @@ struct DealershipSharingView: View {
 
     @MainActor
     private func loadDealership() {
-        do { dealership = try PersistenceController.shared.dealership() }
+        do {
+            dealership = try PersistenceController.shared.dealership()
+            dealerships = try PersistenceController.shared.allDealerships()
+        }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    private func manageShare(for item: Dealership) {
+        preparing = true
+        managingDealership = item
+        PersistenceController.shared.existingSharingInformation(for: item) { result in
+            DispatchQueue.main.async {
+                preparing = false
+                switch result {
+                case let .success((existingShare, container)):
+                    share = existingShare
+                    cloudContainer = container
+                case let .failure(error):
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func recoverOtherDealerships() {
+        guard let dealership else { return }
+        recovering = true
+        recoveryMessage = nil
+        PersistenceController.shared.recoverUnsharedDealerships(into: dealership) { result in
+            DispatchQueue.main.async {
+                recovering = false
+                switch result {
+                case let .success(count):
+                    recoveryMessage = count == 0
+                        ? "No unshared vehicles needed recovery."
+                        : "Recovered \(count) vehicle\(count == 1 ? "" : "s"). Keep the app open while CloudKit uploads them."
+                    loadDealership()
+                case let .failure(error):
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     private func prepareShare() {
